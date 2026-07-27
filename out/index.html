@@ -356,6 +356,8 @@
   .clink .cc{font-size:12px;color:var(--muted);margin-top:1px}
   .clink button{margin-top:8px;width:100%;font-size:13px;padding:7px}
   .clink input{margin-top:7px;font-size:12px;background:#FAFBFC}
+  .clink input.dir-mail{background:#fff;border-color:var(--line-2)}
+  .clink input.dir-mail:not(:placeholder-shown){border-color:var(--teal);background:#F3FBF9}
 
   /* approval block in ficha */
   .approve-box{border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background:#FAFBFC}
@@ -1016,8 +1018,8 @@ let rosterPhoto = '';      // base64 foto en formulario RRHH
       NO se comparte entre personas ni garantiza permanencia. */
 
 /* ====== CONFIGURACIÓN SUPABASE (editar estas 2 líneas) ====== */
-const SUPABASE_URL      = "https://iigtulgpbqeypnewmzxz.supabase.co";   // ej. "https://abcdefghijk.supabase.co"
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpZ3R1bGdwYnFleXBuZXdtenh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MTU3OTgsImV4cCI6MjA5OTA5MTc5OH0.kFqdbOiRKjyNJ5H-vCvNd3SrC7lamYtN3WyIY8rpetU";   // la "anon public" key del proyecto
+const SUPABASE_URL      = "";   // ej. "https://abcdefghijk.supabase.co"
+const SUPABASE_ANON_KEY = "";   // la "anon public" key del proyecto
 /* ============================================================ */
 const SB_TABLE = 'olo_kv';
 const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window!=='undefined' && window.supabase)
@@ -2403,6 +2405,7 @@ function downloadTemplate(){
 async function renderRoster(){
   const roster=await getRoster();
   const all=await getAll();
+  await loadEmailDir();
   const evaluatedIds=new Set(all.map(r=>r.rosterId).filter(Boolean));
   document.getElementById('r-total-count').textContent=roster.length;
   document.getElementById('r-pend-count').textContent=roster.filter(o=>!evaluatedIds.has(o.id)).length;
@@ -2421,6 +2424,7 @@ async function renderRoster(){
       const link=coordLink(c);
       const safe=c.replace(/'/g,'');
       return `<div class="clink"><div class="cn">${esc(c)}</div><div class="cc">${cnt} colaborador(es)</div>
+        <input type="email" class="dir-mail" placeholder="✉ correo del coordinador (para envío directo)" value="${esc(EMAIL_DIR['c:'+safe]||'')}" data-k="c:${esc(safe)}" onchange="saveEmailDir(this)">
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
         <button class="mini" onclick="sendInvite('coordinador','${esc(safe)}','${esc(link)}')">✉ Enviar correo</button></div>`;
@@ -2440,6 +2444,7 @@ async function renderRoster(){
       const cnt=roster.filter(o=>o.gerente===gname).length;
       const link=gerLink(gname); const safe=gname.replace(/'/g,'');
       return `<div class="clink"><div class="cn">${esc(gname)}</div><div class="cc">${cnt} colaborador(es)</div>
+        <input type="email" class="dir-mail" placeholder="✉ correo del gerente (para envío directo)" value="${esc(EMAIL_DIR['g:'+safe]||'')}" data-k="g:${esc(safe)}" onchange="saveEmailDir(this)">
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
         <button class="mini" onclick="sendInvite('gerente de área','${esc(safe)}','${esc(link)}')">✉ Enviar correo</button></div>`;
@@ -2857,7 +2862,41 @@ function exitScopeView(){
   refreshMode(); showView('rrhh');
   window.scrollTo({top:0,behavior:'smooth'});
 }
+/* ---------------- Directorio de correos + envío real ----------------
+   Los correos de coordinadores/gerentes se capturan en la pestaña Administrador
+   (campo junto a cada enlace) y se guardan centralmente en la clave 'conf:emails'.
+   El envío real se hace por la Edge Function 'send-eval-email' de Supabase
+   (ver archivo edge_function_send_eval_email.ts). Si no está configurada,
+   se conserva el modo anterior (abrir en el cliente de correo del usuario). */
+let EMAIL_DIR={};
+async function loadEmailDir(){ try{ EMAIL_DIR=(await Store.get('conf:emails'))||{}; }catch(e){ EMAIL_DIR={}; } }
+async function saveEmailDir(inp){
+  const k=inp.getAttribute('data-k'); const v=inp.value.trim();
+  if(v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ showToast('Correo inválido: revisa el formato'); inp.focus(); return; }
+  if(v) EMAIL_DIR[k]=v; else delete EMAIL_DIR[k];
+  await Store.set('conf:emails', EMAIL_DIR);
+  showToast(v?('Correo guardado ✓ '+v):'Correo eliminado del directorio');
+}
+async function sendNow(btn, to, subject){
+  const bodyEl=document.getElementById('email-body');
+  const body=bodyEl?bodyEl.value:'';
+  if(/_{3,}/.test(body) && !confirm('La fecha límite sigue sin completar (____). ¿Enviar de todos modos?')) return;
+  btn.disabled=true; const prev=btn.textContent; btn.textContent='Enviando…';
+  try{
+    const {data,error}=await sb.functions.invoke('send-eval-email',{body:{to:to, subject:subject, body:body}});
+    if(error) throw error;
+    if(data && data.error) throw new Error(typeof data.error==='string'?data.error:JSON.stringify(data.error));
+    showToast('✓ Correo enviado a '+to);
+    document.getElementById('pdf-modal').classList.remove('show');
+  }catch(e){
+    console.error('sendNow',e);
+    showToast('No se pudo enviar. Revisa la Edge Function y la API key en Supabase');
+    btn.disabled=false; btn.textContent=prev;
+  }
+}
 function sendInvite(role, name, link){
+  const dirKey=(role.indexOf('coord')===0?'c:':'g:')+name;
+  const to=EMAIL_DIR[dirKey]||'';
   const asunto=`Evaluación semestral de Talento Operativo — ${role} ${name}`;
   const cuerpo=
 `Estimado(a) ${name},
@@ -2874,7 +2913,7 @@ Recuerde calificar con base en hechos observables de los últimos 12 meses, de f
 Agradecemos su compromiso con el desarrollo del talento operativo de OLO.
 
 Recursos Humanos — OLO`;
-  showEmailModal(asunto, cuerpo);
+  showEmailModal(asunto, cuerpo, to);
 }
 function copyText(t){
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>showToast('Enlace copiado ✓'),()=>showToast('Copia manual del campo')); }
@@ -2896,18 +2935,29 @@ function openFileModal(dataUri, filename, kind){
   document.getElementById('pdf-modal').classList.add('show');
 }
 function _mailtoFor(subject){ const b=document.getElementById('email-body'); return 'mailto:?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(b?b.value:''); }
-function showEmailModal(subject, body){
+function showEmailModal(subject, body, to){
   document.getElementById('pdf-name').textContent='Correo: '+subject;
-  const dl=document.getElementById('pdf-dl'); dl.removeAttribute('download'); dl.textContent='✉ Abrir en correo'; dl.style.display='';
+  const dl=document.getElementById('pdf-dl'); dl.removeAttribute('download'); dl.textContent='✉ Abrir en mi correo'; dl.style.display='';
   document.getElementById('pdf-tab-btn').style.display='none';
   const fr=document.getElementById('pdf-frame'), msg=document.getElementById('pdf-msg');
   fr.style.display='none'; fr.src='about:blank'; msg.style.display='flex';
-  msg.innerHTML='<div style="max-width:600px;width:100%;text-align:left"><p style="margin:0 0 8px;font-size:13px;color:var(--ink-2)">Edita la <b>fecha límite</b> si lo necesitas, luego pulsa <b>✉ Abrir en correo</b> para enviarlo desde tu cliente. Si no abre, pulsa <b>Copiar</b> y pégalo en tu correo.</p>'
+  const canSend = USE_SB && !!to;
+  const hint = canSend
+    ? '<p style="margin:0 0 8px;font-size:13px;color:var(--ink-2)">Se enviará desde el sistema a <b>'+esc(to)+'</b>. Completa la <b>fecha límite</b> y pulsa <b>Enviar ahora</b>. También puedes usar <b>✉ Abrir en mi correo</b> (arriba) para enviarlo manualmente.</p>'
+    : (USE_SB
+        ? '<p style="margin:0 0 8px;font-size:13px;color:var(--danger)"><b>Sin correo configurado para este destinatario.</b> Captúralo en el campo "✉ correo..." junto a su enlace (pestaña Administrador) para habilitar el envío directo. Mientras tanto puedes usar <b>✉ Abrir en mi correo</b>.</p>'
+        : '<p style="margin:0 0 8px;font-size:13px;color:var(--ink-2)">Edita la <b>fecha límite</b> si lo necesitas, luego pulsa <b>✉ Abrir en mi correo</b> para enviarlo desde tu cliente. Si no abre, pulsa <b>Copiar</b> y pégalo en tu correo.</p>');
+  msg.innerHTML='<div style="max-width:600px;width:100%;text-align:left">'+hint
     +'<textarea id="email-body" style="width:100%;height:260px">'+esc(body)+'</textarea>'
-    +'<div style="margin-top:10px;text-align:center"><button class="btn-mini-primary" onclick="copyText(document.getElementById(\'email-body\').value)">Copiar texto del correo</button></div></div>';
+    +'<div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
+    +(canSend?'<button class="btn btn-primary" style="padding:9px 22px" id="email-send-btn">✉ Enviar ahora</button>':'')
+    +'<button class="btn-mini-primary" onclick="copyText(document.getElementById(\'email-body\').value)">Copiar texto del correo</button>'
+    +'</div></div>';
   dl.href=_mailtoFor(subject);
   const ta=document.getElementById('email-body');
   if(ta) ta.addEventListener('input',()=>{ dl.href=_mailtoFor(subject); });
+  const sbtn=document.getElementById('email-send-btn');
+  if(sbtn) sbtn.addEventListener('click',()=>sendNow(sbtn, to, subject));
   document.getElementById('pdf-modal').classList.add('show');
 }
 function savePdf(doc, filename){
