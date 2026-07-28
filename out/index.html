@@ -815,6 +815,18 @@
           <button class="mini" style="width:100%;margin-top:14px" onclick="clearRoster()">Vaciar lista completa</button>
         </div>
         <div class="card pad" style="margin-top:20px">
+          <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px">Configuración del correo</p>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Define la <b>fecha límite</b> que aparecerá en el correo. Al pulsar “✉ Enviar correo” el mensaje sale de inmediato con la plantilla ya completada para cada destinatario.</p>
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Fecha límite de entrega</label>
+          <input type="date" id="mail-deadline" style="width:100%" onchange="saveDeadline(this)">
+          <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:14px">
+            <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Probar envío (no toca a los coordinadores)</label>
+            <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Escribe un correo tuyo y envía un mensaje de <b>PRUEBA</b> para confirmar que la conexión funciona. No afecta a ningún coordinador ni gerente.</p>
+            <input type="email" id="mail-test-to" placeholder="tu-correo@ologistics.com" style="width:100%">
+            <button class="mini" style="width:100%;margin-top:8px" onclick="sendTest(this)">✉ Enviar prueba</button>
+          </div>
+        </div>
+        <div class="card pad" style="margin-top:20px">
           <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px">Enlaces por coordinador</p>
           <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Genere y comparta el enlace de cada coordinador. Solo verá a sus colaboradores y su dashboard.</p>
           <div id="coord-links"></div>
@@ -1018,8 +1030,8 @@ let rosterPhoto = '';      // base64 foto en formulario RRHH
       NO se comparte entre personas ni garantiza permanencia. */
 
 /* ====== CONFIGURACIÓN SUPABASE (editar estas 2 líneas) ====== */
-const SUPABASE_URL      = "";   // ej. "https://abcdefghijk.supabase.co"
-const SUPABASE_ANON_KEY = "";   // la "anon public" key del proyecto
+const SUPABASE_URL      = "https://iigtulgpbqeypnewmzxz.supabase.co";   // ej. "https://abcdefghijk.supabase.co"
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpZ3R1bGdwYnFleXBuZXdtenh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MTU3OTgsImV4cCI6MjA5OTA5MTc5OH0.kFqdbOiRKjyNJ5H-vCvNd3SrC7lamYtN3WyIY8rpetU";   // la "anon public" key del proyecto
 /* ============================================================ */
 const SB_TABLE = 'olo_kv';
 const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window!=='undefined' && window.supabase)
@@ -2406,6 +2418,8 @@ async function renderRoster(){
   const roster=await getRoster();
   const all=await getAll();
   await loadEmailDir();
+  const dlInp=document.getElementById('mail-deadline');
+  if(dlInp) dlInp.value=(EMAIL_DIR['_deadline']||'');
   const evaluatedIds=new Set(all.map(r=>r.rosterId).filter(Boolean));
   document.getElementById('r-total-count').textContent=roster.length;
   document.getElementById('r-pend-count').textContent=roster.filter(o=>!evaluatedIds.has(o.id)).length;
@@ -2424,10 +2438,10 @@ async function renderRoster(){
       const link=coordLink(c);
       const safe=c.replace(/'/g,'');
       return `<div class="clink"><div class="cn">${esc(c)}</div><div class="cc">${cnt} colaborador(es)</div>
-        <input type="email" class="dir-mail" placeholder="✉ correo del coordinador (para envío directo)" value="${esc(EMAIL_DIR['c:'+safe]||'')}" data-k="c:${esc(safe)}" onchange="saveEmailDir(this)">
+        <input type="email" class="dir-mail" placeholder="✉ correo del coordinador (se envía a esta dirección)" value="${esc(EMAIL_DIR['c:'+safe]||'')}" data-k="c:${esc(safe)}" onchange="saveEmailDir(this)">
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
-        <button class="mini" onclick="sendInvite('coordinador','${esc(safe)}','${esc(link)}')">✉ Enviar correo</button></div>`;
+        <button class="mini" onclick="sendInvite('coordinador','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
     }).join('');
   }
 
@@ -2444,10 +2458,10 @@ async function renderRoster(){
       const cnt=roster.filter(o=>o.gerente===gname).length;
       const link=gerLink(gname); const safe=gname.replace(/'/g,'');
       return `<div class="clink"><div class="cn">${esc(gname)}</div><div class="cc">${cnt} colaborador(es)</div>
-        <input type="email" class="dir-mail" placeholder="✉ correo del gerente (para envío directo)" value="${esc(EMAIL_DIR['g:'+safe]||'')}" data-k="g:${esc(safe)}" onchange="saveEmailDir(this)">
+        <input type="email" class="dir-mail" placeholder="✉ correo del gerente (se envía a esta dirección)" value="${esc(EMAIL_DIR['g:'+safe]||'')}" data-k="g:${esc(safe)}" onchange="saveEmailDir(this)">
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
-        <button class="mini" onclick="sendInvite('gerente de área','${esc(safe)}','${esc(link)}')">✉ Enviar correo</button></div>`;
+        <button class="mini" onclick="sendInvite('gerente de área','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
     }).join('');
   }
 
@@ -2894,26 +2908,89 @@ async function sendNow(btn, to, subject){
     btn.disabled=false; btn.textContent=prev;
   }
 }
-function sendInvite(role, name, link){
-  const dirKey=(role.indexOf('coord')===0?'c:':'g:')+name;
-  const to=EMAIL_DIR[dirKey]||'';
-  const asunto=`Evaluación semestral de Talento Operativo — ${role} ${name}`;
-  const cuerpo=
-`Estimado(a) ${name},
+// Envío de PRUEBA: manda un correo de ejemplo al correo escrito, sin tocar a nadie.
+async function sendTest(btn){
+  const inp=document.getElementById('mail-test-to');
+  const to=(inp?inp.value:'').trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ showToast('Escribe un correo válido para la prueba'); if(inp) inp.focus(); return; }
+  if(!USE_SB){ showToast('El envío directo requiere Supabase configurado (URL + anon key)'); return; }
+  await loadEmailDir();
+  const deadlineISO=EMAIL_DIR['_deadline']||'';
+  const asunto='[PRUEBA] Evaluación semestral de Talento Operativo — OLO';
+  const cuerpo='*** ESTE ES UN CORREO DE PRUEBA DEL SISTEMA DE EVALUACIONES — puede ignorarlo ***\n\n'
+    + buildInviteBody('coordinador', 'Nombre de ejemplo', (location.origin+location.pathname+'#c=ejemplo'), deadlineISO);
+  const prev=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Enviando prueba…'; }
+  try{
+    const {data,error}=await sb.functions.invoke('send-eval-email',{body:{to:to, subject:asunto, body:cuerpo}});
+    if(error) throw error;
+    if(data && data.error) throw new Error(typeof data.error==='string'?data.error:JSON.stringify(data.error));
+    showToast('✓ Prueba enviada a '+to+' — revisa tu bandeja (y spam)');
+    if(btn){ btn.textContent='✓ Prueba enviada'; setTimeout(()=>{ btn.disabled=false; btn.textContent=prev; }, 3000); }
+  }catch(e){
+    console.error('sendTest',e);
+    showToast('Falló la prueba. Revisa la Edge Function en Supabase → Logs');
+    if(btn){ btn.disabled=false; btn.textContent=prev; }
+  }
+}
+async function saveDeadline(inp){
+  await loadEmailDir();
+  const v=inp.value||'';
+  if(v) EMAIL_DIR['_deadline']=v; else delete EMAIL_DIR['_deadline'];
+  await Store.set('conf:emails', EMAIL_DIR);
+  showToast(v?('Fecha límite guardada ✓ '+fmtDeadline(v)):'Fecha límite eliminada');
+}
+function fmtDeadline(iso){
+  if(!iso) return '';
+  const p=iso.split('-'); if(p.length!==3) return iso;
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const d=parseInt(p[2],10), m=parseInt(p[1],10)-1, y=p[0];
+  return `${d} de ${meses[m]||''} de ${y}`;
+}
+function buildInviteBody(role, name, link, deadlineISO){
+  const fecha = deadlineISO ? fmtDeadline(deadlineISO) : 'la fecha indicada por Recursos Humanos';
+  return `Estimado(a) ${name},
 
 Como parte de la gestión de talento de OLO, se realiza la evaluación semestral de los operadores de montacargas y apiladores. Su participación como ${role} es clave: los resultados permiten identificar talento, definir planes de desarrollo, certificaciones, formación de instructores y planes de sucesión para fortalecer la operación.
 
 Le solicitamos completar la evaluación de su equipo a través del siguiente enlace personalizado:
 ${link}
 
-Fecha límite de entrega: _________________ (complete antes de enviar).
+Fecha límite de entrega: ${fecha}.
 
 Recuerde calificar con base en hechos observables de los últimos 12 meses, de forma objetiva.
 
 Agradecemos su compromiso con el desarrollo del talento operativo de OLO.
 
 Recursos Humanos — OLO`;
-  showEmailModal(asunto, cuerpo, to);
+}
+// Un solo toque: arma la plantilla con los datos del destinatario y envía de inmediato.
+async function sendInvite(role, name, link, btn){
+  await loadEmailDir();
+  const dirKey=(role.indexOf('coord')===0?'c:':'g:')+name;
+  const to=EMAIL_DIR[dirKey]||'';
+  const deadlineISO=EMAIL_DIR['_deadline']||'';
+  const asunto=`Evaluación semestral de Talento Operativo — ${role} ${name}`;
+  const cuerpo=buildInviteBody(role, name, link, deadlineISO);
+
+  // Sin Supabase configurado: cae al modo manual (abrir en el cliente de correo).
+  if(!USE_SB){ showEmailModal(asunto, cuerpo, to); return; }
+  // Sin correo capturado para este destinatario: avisa y abre el editor para capturarlo.
+  if(!to){ showToast('Captura primero el correo de '+name+' en el campo "✉ correo…"'); showEmailModal(asunto, cuerpo, to); return; }
+  if(!deadlineISO && !confirm('No has definido la fecha límite (arriba, en “Configuración del correo”). El correo dirá “la fecha indicada por Recursos Humanos”. ¿Enviar de todos modos?')) return;
+
+  const b=btn||(typeof event!=='undefined'&&event?event.target:null);
+  const prev=b?b.textContent:''; if(b){ b.disabled=true; b.textContent='Enviando…'; }
+  try{
+    const {data,error}=await sb.functions.invoke('send-eval-email',{body:{to:to, subject:asunto, body:cuerpo}});
+    if(error) throw error;
+    if(data && data.error) throw new Error(typeof data.error==='string'?data.error:JSON.stringify(data.error));
+    showToast('✓ Correo enviado a '+to);
+    if(b){ b.textContent='✓ Enviado'; setTimeout(()=>{ b.disabled=false; b.textContent=prev; }, 2500); }
+  }catch(e){
+    console.error('sendInvite',e);
+    showToast('No se pudo enviar. Revisa la Edge Function en Supabase (Logs)');
+    if(b){ b.disabled=false; b.textContent=prev; }
+  }
 }
 function copyText(t){
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>showToast('Enlace copiado ✓'),()=>showToast('Copia manual del campo')); }
