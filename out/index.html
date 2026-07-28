@@ -358,6 +358,10 @@
   .clink input{margin-top:7px;font-size:12px;background:#FAFBFC}
   .clink input.dir-mail{background:#fff;border-color:var(--line-2)}
   .clink input.dir-mail:not(:placeholder-shown){border-color:var(--teal);background:#F3FBF9}
+  .dir-auto{margin-top:7px;font-size:12px;border-radius:8px;padding:7px 9px;line-height:1.35}
+  .dir-auto.ok{background:#E2F4EF;color:#00735E;border:1px solid #B9E3D8}
+  .dir-auto.ok span{color:#4E9B89;font-size:11px}
+  .dir-auto.warn{background:#FBEAE8;color:#A33A30;border:1px solid #F0CFC9}
 
   /* approval block in ficha */
   .approve-box{border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background:#FAFBFC}
@@ -760,7 +764,7 @@
       <div>
         <div class="card pad">
           <p class="section-label">Cargar en lote (Excel o CSV)</p>
-          <p class="section-note">Columnas: <code>Nombre, Ficha, Departamento, Area, TipoEquipo, Coordinador, GerenteArea, FechaNacimiento, FechaIngreso, Estudios, Movilidad</code>. La edad se calcula desde la fecha de nacimiento. Acepta <b>.xlsx, .xls y .csv</b>. Las fotos se cargan aparte (sección de Fotos).</p>
+          <p class="section-note">Columnas: <code>Nombre, Ficha, Departamento, Area, TipoEquipo, Coordinador, GerenteArea, FechaNacimiento, FechaIngreso, Estudios, Movilidad, CorreoCoordinador, CorreoGerente</code>. Los correos se usan para el envío automático de invitaciones. La edad se calcula desde la fecha de nacimiento. Acepta <b>.xlsx, .xls y .csv</b>. Las fotos se cargan aparte (sección de Fotos).</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
             <label class="btn-mini-primary">Importar Excel / CSV<input type="file" id="roster-csv" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onchange="importRoster(event)" hidden></label>
             <button class="mini" onclick="downloadTemplate()">Descargar plantilla</button>
@@ -816,7 +820,7 @@
         </div>
         <div class="card pad" style="margin-top:20px">
           <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px">Configuración del correo</p>
-          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Define la <b>fecha límite</b> que aparecerá en el correo. Al pulsar “✉ Enviar correo” el mensaje sale de inmediato con la plantilla ya completada para cada destinatario.</p>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Los correos de coordinadores y gerentes se toman <b>automáticamente</b> del archivo importado (columnas <code>CorreoCoordinador</code> y <code>CorreoGerente</code>). Aquí solo defines la <b>fecha límite</b> que aparecerá en el correo. Al pulsar “✉ Enviar correo” el mensaje sale de inmediato con la plantilla ya completada para cada destinatario.</p>
           <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Fecha límite de entrega</label>
           <input type="date" id="mail-deadline" style="width:100%" onchange="saveDeadline(this)">
           <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:14px">
@@ -2357,9 +2361,11 @@ async function importRoster(e){
   let start=0;
   const h=rows[0].map(c=>String(c==null?'':c).trim().toLowerCase());
   const idx={nombre:h.findIndex(x=>x.includes('nombre')),ficha:h.findIndex(x=>x.includes('ficha')),depto:h.findIndex(x=>x.startsWith('depart')||x.includes('departa')),
-    area:h.findIndex(x=>x.startsWith('area')||x.startsWith('área')),tipo:h.findIndex(x=>x.includes('tipo')),coord:h.findIndex(x=>x.includes('coord')),
+    area:h.findIndex(x=>x.startsWith('area')||x.startsWith('área')),tipo:h.findIndex(x=>x.includes('tipo')),coord:h.findIndex(x=>x.includes('coord')&&!x.includes('correo')&&!x.includes('mail')),
     nacimiento:h.findIndex(x=>x.includes('nacim')),ingreso:h.findIndex(x=>x.includes('ingreso')),
-    estudios:h.findIndex(x=>x.startsWith('estud')),movilidad:h.findIndex(x=>x.includes('movil')),gerente:h.findIndex(x=>x.includes('gerente')||x.includes('gerencia'))};
+    estudios:h.findIndex(x=>x.startsWith('estud')),movilidad:h.findIndex(x=>x.includes('movil')),gerente:h.findIndex(x=>(x.includes('gerente')||x.includes('gerencia'))&&!x.includes('correo')&&!x.includes('mail')),
+    coordEmail:h.findIndex(x=>(x.includes('correo')||x.includes('mail')||x.includes('email'))&&x.includes('coord')),
+    gerEmail:h.findIndex(x=>(x.includes('correo')||x.includes('mail')||x.includes('email'))&&(x.includes('gerente')||x.includes('gerencia')))};
   let map=idx;
   if(idx.nombre===-1){ map={nombre:0,ficha:1,depto:2,area:3,tipo:4,coord:5,nacimiento:6,ingreso:7,estudios:8,movilidad:9,gerente:10}; } else { start=1; }
   let count=0;
@@ -2370,6 +2376,7 @@ async function importRoster(e){
     let tipo=g('tipo').toLowerCase().startsWith('api')?'Apilador':'Montacargas';
     const rec={ id:'roster:'+Date.now()+'_'+i+'_'+Math.random().toString(36).slice(2,7),
       nombre, ficha:g('ficha'), depto:g('depto'), area:g('area'), tipo, coord:g('coord'), gerente:g('gerente'),
+      coordEmail:g('coordEmail'), gerEmail:g('gerEmail'),
       nacimiento:toDateStr(cell('nacimiento')), ingreso:toDateStr(cell('ingreso')), estudios:g('estudios'), movilidad:g('movilidad'),
       foto:'', created:Date.now() };
     await Store.set(rec.id,rec); count++;
@@ -2408,9 +2415,9 @@ function toDateStr(v){
   return normDate(String(v));
 }
 function downloadTemplate(){
-  const csv='Nombre,Ficha,Departamento,Area,TipoEquipo,Coordinador,GerenteArea,FechaNacimiento,FechaIngreso,Estudios,Movilidad\n'+
-    'Juan Pérez,1024,Almacén,Recibo,Montacargas,Ana López,Carlos Ruiz,1990-05-12,2019-03-01,Bachillerato,Operador A\n'+
-    'María Gómez,1025,Almacén,Despacho,Apilador,Ana López,Carlos Ruiz,1995-11-30,2021-07-10,Técnico en logística,Operador B\n';
+  const csv='Nombre,Ficha,Departamento,Area,TipoEquipo,Coordinador,GerenteArea,FechaNacimiento,FechaIngreso,Estudios,Movilidad,CorreoCoordinador,CorreoGerente\n'+
+    'Juan Pérez,1024,Almacén,Recibo,Montacargas,Ana López,Carlos Ruiz,1990-05-12,2019-03-01,Bachillerato,Operador A,ana.lopez@ologistics.com,carlos.ruiz@ologistics.com\n'+
+    'María Gómez,1025,Almacén,Despacho,Apilador,Ana López,Carlos Ruiz,1995-11-30,2021-07-10,Técnico en logística,Operador B,ana.lopez@ologistics.com,carlos.ruiz@ologistics.com\n';
   openFileModal(URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'})),'plantilla_operadores_OLO.csv','csv');
 }
 
@@ -2425,6 +2432,9 @@ async function renderRoster(){
   document.getElementById('r-pend-count').textContent=roster.filter(o=>!evaluatedIds.has(o.id)).length;
   // coordinator filter options (shared with pending view)
   const coords=[...new Set(roster.map(o=>o.coord).filter(Boolean))].sort();
+  // Correos automáticos: se toman del propio roster (columnas CorreoCoordinador / CorreoGerente)
+  const coordEmailOf=(name)=>{ const o=roster.find(x=>x.coord===name && x.coordEmail && /@/.test(x.coordEmail)); return o?o.coordEmail.trim():''; };
+  const gerEmailOf=(name)=>{ const o=roster.find(x=>x.gerente===name && x.gerEmail && /@/.test(x.gerEmail)); return o?o.gerEmail.trim():''; };
   const sel=document.getElementById('pending-coord-filter');
   const cur=sel.value;
   sel.innerHTML='<option value="">Todos los coordinadores</option>'+coords.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
@@ -2437,11 +2447,15 @@ async function renderRoster(){
       const cnt=roster.filter(o=>o.coord===c).length;
       const link=coordLink(c);
       const safe=c.replace(/'/g,'');
+      const mail=coordEmailOf(c);
+      const mailRow = mail
+        ? `<div class="dir-auto ok">✉ ${esc(mail)} <span>(del archivo)</span></div>`
+        : `<div class="dir-auto warn">✉ Sin correo en el archivo — agrega la columna <b>CorreoCoordinador</b> y reimporta</div>`;
       return `<div class="clink"><div class="cn">${esc(c)}</div><div class="cc">${cnt} colaborador(es)</div>
-        <input type="email" class="dir-mail" placeholder="✉ correo del coordinador (se envía a esta dirección)" value="${esc(EMAIL_DIR['c:'+safe]||'')}" data-k="c:${esc(safe)}" onchange="saveEmailDir(this)">
+        ${mailRow}
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
-        <button class="mini" onclick="sendInvite('coordinador','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
+        <button class="mini" ${mail?'':'disabled'} onclick="sendInvite('coordinador','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
     }).join('');
   }
 
@@ -2457,11 +2471,15 @@ async function renderRoster(){
     else gl.innerHTML=gerentes.map(gname=>{
       const cnt=roster.filter(o=>o.gerente===gname).length;
       const link=gerLink(gname); const safe=gname.replace(/'/g,'');
+      const mail=gerEmailOf(gname);
+      const mailRow = mail
+        ? `<div class="dir-auto ok">✉ ${esc(mail)} <span>(del archivo)</span></div>`
+        : `<div class="dir-auto warn">✉ Sin correo en el archivo — agrega la columna <b>CorreoGerente</b> y reimporta</div>`;
       return `<div class="clink"><div class="cn">${esc(gname)}</div><div class="cc">${cnt} colaborador(es)</div>
-        <input type="email" class="dir-mail" placeholder="✉ correo del gerente (se envía a esta dirección)" value="${esc(EMAIL_DIR['g:'+safe]||'')}" data-k="g:${esc(safe)}" onchange="saveEmailDir(this)">
+        ${mailRow}
         <input type="text" readonly value="${esc(link)}" onclick="this.select()">
         <button class="mini" onclick="copyText('${esc(link)}')">Copiar enlace</button>
-        <button class="mini" onclick="sendInvite('gerente de área','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
+        <button class="mini" ${mail?'':'disabled'} onclick="sendInvite('gerente de área','${esc(safe)}','${esc(link)}',this)">✉ Enviar correo</button></div>`;
     }).join('');
   }
 
@@ -2964,18 +2982,22 @@ Agradecemos su compromiso con el desarrollo del talento operativo de OLO.
 Recursos Humanos — OLO`;
 }
 // Un solo toque: arma la plantilla con los datos del destinatario y envía de inmediato.
+// El correo se toma AUTOMÁTICAMENTE del roster (columnas CorreoCoordinador / CorreoGerente).
 async function sendInvite(role, name, link, btn){
   await loadEmailDir();
-  const dirKey=(role.indexOf('coord')===0?'c:':'g:')+name;
-  const to=EMAIL_DIR[dirKey]||'';
+  const isCoord = role.indexOf('coord')===0;
+  const roster=await getRoster();
+  let to='';
+  if(isCoord){ const o=roster.find(x=>x.coord===name && x.coordEmail && /@/.test(x.coordEmail)); to=o?o.coordEmail.trim():''; }
+  else{ const o=roster.find(x=>x.gerente===name && x.gerEmail && /@/.test(x.gerEmail)); to=o?o.gerEmail.trim():''; }
   const deadlineISO=EMAIL_DIR['_deadline']||'';
   const asunto=`Evaluación semestral de Talento Operativo — ${role} ${name}`;
   const cuerpo=buildInviteBody(role, name, link, deadlineISO);
 
   // Sin Supabase configurado: cae al modo manual (abrir en el cliente de correo).
   if(!USE_SB){ showEmailModal(asunto, cuerpo, to); return; }
-  // Sin correo capturado para este destinatario: avisa y abre el editor para capturarlo.
-  if(!to){ showToast('Captura primero el correo de '+name+' en el campo "✉ correo…"'); showEmailModal(asunto, cuerpo, to); return; }
+  // Sin correo en el archivo para este destinatario.
+  if(!to){ showToast('No hay correo de '+name+' en el archivo. Agrega la columna Correo'+(isCoord?'Coordinador':'Gerente')+' y reimporta el roster.'); return; }
   if(!deadlineISO && !confirm('No has definido la fecha límite (arriba, en “Configuración del correo”). El correo dirá “la fecha indicada por Recursos Humanos”. ¿Enviar de todos modos?')) return;
 
   const b=btn||(typeof event!=='undefined'&&event?event.target:null);
